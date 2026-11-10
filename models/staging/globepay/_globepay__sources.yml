@@ -1,0 +1,54 @@
+version: 2
+
+sources:
+  - name: globepay
+    description: >
+      Globepay reports.
+      Loaded with `bq load` into BigQuery with all columns as STRING. Casts to the right types are done in the dbt staging models.
+    database: deel-globepay
+    schema: raw_globepay
+    tables:
+      - name: acceptance_report
+        description: One row for each payment attempt with card, with outcome (ACCEPTED/DECLINED), amount in local currency and exchange rates.
+        columns:
+          - name: external_ref
+            description: Unique ID of the payment attempt (join key with the chargeback report).
+            data_tests:
+              - unique
+              - not_null
+              # Q3 monitor: every payment attempt should have a row in the chargeback report.
+              # warn: a missing row is a data gap to report, not a reason to stop the build.
+              - relationships:
+                  arguments:
+                    to: source('globepay', 'chargeback_report')
+                    field: external_ref
+                  config:
+                    severity: warn
+          - name: state
+            description: The outcome of the payment attempt.
+            data_tests:
+              # error: `is_accepted` and the acceptance rate depend on these two values.
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: ['ACCEPTED', 'DECLINED']
+      - name: chargeback_report
+        description: One row for each transaction with the chargeback flag.
+        columns:
+          - name: external_ref
+            description: Unique Globepay transaction ID (join key with the acceptance report).
+            data_tests:
+              - unique
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('globepay', 'acceptance_report')
+                    field: external_ref
+          - name: chargeback
+            description: Whether the transaction was charged back (TRUE/FALSE, as string).
+            data_tests:
+              # error: the value is cast to BOOL in staging.
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: ['TRUE', 'FALSE']

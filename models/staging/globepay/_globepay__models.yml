@@ -1,0 +1,109 @@
+version: 2
+
+models:
+  - name: stg_globepay__acceptances
+    description: >
+      One row per payment attempt processed by Globepay, with its outcome, the amount
+      in local currency and the amount converted to USD (settlement currency).
+    columns:
+      - name: transaction_id
+        description: >
+          Globepay transaction ID (CSV column `external_ref`). Primary key, join key with the chargeback report.
+          Note: the API spec example shows the `evt_...` ID as `external_ref`; in the CSV that ID is in `ref` (see `docs/ingestion_and_modeling.md`, section 1.4).
+          Unique, not null and coverage with the chargeback report are tested on the source (`external_ref`).
+      - name: event_id
+        description: Globepay event ID (CSV column `ref`, `evt_...`). The API spec calls this value `external_ref` (see `docs/ingestion_and_modeling.md`, section 1.4).
+        data_tests:
+          - unique
+          - not_null
+      - name: transaction_at
+        description: UTC timestamp of the payment attempt.
+        data_tests:
+          - not_null
+      - name: source_system
+        description: System that produced the report (always `GLOBALPAY` in the current data).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['GLOBALPAY']
+              config:
+                severity: warn
+      - name: is_status_valid
+        description: Report record status (`status`); always TRUE in the current data.
+      - name: transaction_state
+        description: Outcome of the payment attempt as reported by Globepay. Values tested on the source (`state`).
+      - name: is_accepted
+        description: TRUE if the payment attempt was accepted (`transaction_state = 'ACCEPTED'`).
+      - name: is_cvv_provided
+        description: TRUE if the card CVV was provided in the payment request.
+        data_tests:
+          - not_null
+      - name: country_code
+        description: >
+          Two-letter country code of the card. Note: the United Kingdom is reported as `UK`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['US', 'MX', 'UK', 'FR', 'CA', 'AE']
+              config:
+                severity: warn
+      - name: currency_code
+        description: >
+          Three-letter code of the transaction currency. Note: AE (United Arab Emirates)
+          transactions are in USD, not AED.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['USD', 'MXN', 'GBP', 'EUR', 'CAD']
+              config:
+                severity: warn
+      - name: amount_local
+        description: >
+          Transaction amount in the local currency (`currency_code`), in major units
+          (assumption: the Globepay API spec says minor units, see `docs/ingestion_and_modeling.md`, section 1.3).
+          One accepted transaction has a negative amount (-23.78 GBP); it is kept as-is
+          and flagged by a warning-level test.
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+              config:
+                severity: warn
+      - name: fx_rates
+        description: Exchange rates applied by Globepay (JSON), as units of each currency per 1 USD.
+      - name: fx_rate_to_usd
+        description: Units of `currency_code` per 1 USD, taken from `fx_rates` (1 for USD).
+        data_tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: amount_usd
+        description: Transaction amount in USD (`amount_local / fx_rate_to_usd`).
+        data_tests:
+          - not_null
+
+  - name: stg_globepay__chargebacks
+    description: One row per Globepay transaction with a flag telling whether it was charged back.
+    columns:
+      - name: transaction_id
+        description: >
+          Globepay transaction ID (CSV column `external_ref`). Primary key, join key with the acceptance report.
+          Unique, not null and match with the acceptance report are tested on the source (`external_ref`).
+      - name: source_system
+        description: System that produced the report (always `GLOBALPAY` in the current data).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['GLOBALPAY']
+              config:
+                severity: warn
+      - name: is_status_valid
+        description: Report record status (`status`); always TRUE in the current data.
+      - name: is_chargeback
+        description: TRUE if the transaction was charged back.
+        data_tests:
+          - not_null

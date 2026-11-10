@@ -1,0 +1,17 @@
+# No secrets: authentication via Application Default Credentials (gcloud).
+# Single environment (prod): dataset `analytics`; custom schemas become analytics_<schema>
+# (analytics_staging, analytics_finance).
+deel_globepay:
+  target: prod
+  outputs:
+    prod:
+      type: bigquery
+      method: oauth
+      project: deel-globepay
+      dataset: analytics
+      location: EU
+      threads: 4
+      job_execution_timeout_seconds: 300
+      job_retries: 1
+      priority: interactive
+      maximum_bytes_billed: 1000000000

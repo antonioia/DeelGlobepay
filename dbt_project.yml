@@ -1,0 +1,21 @@
+name: deel_globepay
+version: "1.0.0"
+profile: deel_globepay
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  deel_globepay:
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      finance:
+        +schema: finance
+        +materialized: table
